@@ -1,0 +1,12 @@
+# Malformed WinGuard Policy for Testing Semantic & Syntax Validation Errors
+[metadata]
+name = invalid_test_policy
+version = 0.0.1
+
+[limits]
+max_processes = 0
+max_memory_mb = 0
+cpu_rate_cap_percent = 150
+
+[security]
+initial_level = LEVEL_INVALID_NAME

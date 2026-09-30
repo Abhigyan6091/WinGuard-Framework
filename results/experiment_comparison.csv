@@ -1,0 +1,4 @@
+mode,policy,wall_time_sec,cpu_user_ms,cpu_kernel_ms,peak_cpu_pct,avg_cpu_pct,peak_mem_mb,active_procs_peak,violations,escalations,demotions,adaptation_latency_ms,contained,exit_code
+"Permissive Baseline","policies\permissive.policy",2.109,750,78,14.44,2.59,50.63,1,0,0,0,0.00,TRUE,0
+"Static Strict","policies\strict.policy",2.110,765,62,14.10,2.48,50.62,1,0,0,0,0.00,TRUE,0
+"Adaptive WinGuard","policies\adaptive_test.policy",2.093,781,31,15.31,2.45,10.55,1,5,2,1,281.00,TRUE,0

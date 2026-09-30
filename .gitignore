@@ -1,0 +1,24 @@
+# Binaries and compiled objects
+bin/*.exe
+bin/*.pdb
+bin/*.ilk
+*.obj
+*.o
+
+# Ephemeral runtime telemetry logs
+results/telemetry_pid*.csv
+results/test_*_telemetry.csv
+
+# Sandbox runtime outputs
+sandbox/output/*
+sandbox/temp/*
+!sandbox/output/.gitkeep
+!sandbox/temp/.gitkeep
+!sandbox/input/.gitkeep
+
+# IDE and OS
+.vscode/
+.vs/
+*.swp
+*.DS_Store
+Thumbs.db

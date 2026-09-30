@@ -1,0 +1,35 @@
+# WinGuard Security Policy: Permissive
+# Purpose: Minimal baseline isolation for observation and telemetry profiling
+
+[metadata]
+name = permissive
+version = 1.0.0
+author = WinGuard Team
+description = Baseline observation policy allowing high resource limits and standard token privileges
+
+[security]
+initial_level = LEVEL_0_OBSERVE
+
+[limits]
+max_processes = 50
+max_memory_mb = 1024
+cpu_rate_cap_percent = 90
+cpu_hard_cap = false
+
+[token]
+use_restricted_token = false
+strip_admin_sids = false
+disable_all_privileges = false
+integrity_level = Medium
+
+[filesystem]
+sandbox_root = sandbox
+read_only_paths = sandbox\input
+read_write_paths = sandbox\output;sandbox\temp
+denied_paths = C:\Windows;C:\Program Files
+
+[adaptive]
+escalation_threshold = 10
+decay_interval_sec = 5
+decay_step = 1
+auto_terminate_on_l3 = false

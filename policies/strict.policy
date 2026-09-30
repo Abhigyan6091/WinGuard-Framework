@@ -1,0 +1,35 @@
+# WinGuard Security Policy: Strict
+# Purpose: High-containment sandbox for suspicious or unverified binaries
+
+[metadata]
+name = strict
+version = 1.0.0
+author = WinGuard Team
+description = Strict isolation sandbox with restricted token, Low MIC integrity, and hard resource throttling
+
+[security]
+initial_level = LEVEL_2_CONTAINED
+
+[limits]
+max_processes = 5
+max_memory_mb = 128
+cpu_rate_cap_percent = 25
+cpu_hard_cap = true
+
+[token]
+use_restricted_token = true
+strip_admin_sids = true
+disable_all_privileges = true
+integrity_level = Low
+
+[filesystem]
+sandbox_root = sandbox
+read_only_paths = sandbox\input
+read_write_paths = sandbox\output;sandbox\temp
+denied_paths = C:\Windows;C:\Program Files;C:\Users
+
+[adaptive]
+escalation_threshold = 1
+decay_interval_sec = 60
+decay_step = 1
+auto_terminate_on_l3 = true
