@@ -151,15 +151,18 @@ Commands:
                  Run a comparative 3-way evaluation on any custom executable command.
 
   attack <name>  Execute controlled adversarial workloads against sandbox:
-                 attack process    - Process exhaustion stress test (fork bomb)
-                 attack memory     - Memory allocation stress test
-                 attack cpu        - Multi-core continuous CPU burn
-                 attack burst      - Intermittent CPU burst & creep pattern
-                 attack privilege  - Privilege adjustment & process handle probe
-                 attack filesystem - Host & sandbox filesystem boundary probe
-                 attack adaptive   - Dynamic state escalation & decay probe
-                 attack repeated   - Multi-vector repeated violation probe
-                 attack all        - Run complete 8-vector evaluation matrix
+                 attack process      - Process exhaustion stress test (fork bomb)
+                 attack memory       - Memory allocation stress test
+                 attack cpu          - Multi-core continuous CPU burn
+                 attack burst        - Intermittent CPU burst & creep pattern
+                 attack privilege    - Privilege adjustment & process handle probe
+                 attack filesystem   - Host & sandbox filesystem boundary probe
+                 attack adaptive     - Dynamic state escalation & decay probe
+                 attack repeated     - Multi-vector repeated violation probe
+                 attack compiler     - Heavy compute with active I/O (elastic throttling)
+                 attack triage       - Multi-process memory triage (selective rogue worker kill)
+                 attack acceleration - Ultra-high velocity memory allocation bomb (>150 MB/s)
+                 attack all          - Run complete 8-vector evaluation matrix
 
   policy <subcmd> Policy compiler & inspection:
                  policy show [name|file] - Display compiled policy specification
@@ -183,6 +186,9 @@ Commands:
 
 ## Building & Running
 
+> [!TIP]
+> For a complete, step-by-step walkthrough covering installation, policy configuration, custom programs, and post-mortem crash dump debugging, see the [**Step-by-Step Usage Guide** (`USAGE_GUIDE.md`)](USAGE_GUIDE.md).
+
 ### Requirements
 - **OS**: Windows 10, Windows 11, or Windows Server (x86_64)
 - **Compiler**: Clang (LLVM MinGW) or MSVC with C11 support
@@ -193,24 +199,33 @@ Run the build script from the repository root:
 ```cmd
 .\build.bat
 ```
-This compiles `WinGuard.exe`, the test workloads, and all 8 adversarial binaries into `bin/`.
+This compiles `WinGuard.exe`, the test workloads, and all 11 adversarial and validation binaries into `bin/`.
 
 ### Quick Start Examples
 
 ```cmd
-# 1. Run the automated 3-way empirical benchmark suite
+# 1. Initialize the isolated sandbox filesystem workspace
+bin\WinGuard.exe fs init
+
+# 2. Run the automated 3-way empirical benchmark suite
 bin\WinGuard.exe benchmark
 
-# 2. Run the complete adversarial security evaluation matrix
+# 3. Run the complete adversarial security evaluation matrix
 bin\WinGuard.exe attack all
 
-# 3. Launch an untrusted program under adaptive isolation with live monitoring
+# 4. Launch an untrusted program under adaptive isolation with live monitoring
 bin\WinGuard.exe run bin\dummy_workload.exe --policy policies\adaptive.policy --monitor
 
-# 4. Compare a custom workload across Permissive vs Strict vs Adaptive
+# 5. Run a heavy compute/simulation workload with elastic rate control
+bin\WinGuard.exe run bin\compiler_simulator.exe 3 --policy compute_workload --monitor
+
+# 6. Test multi-process graduated memory triage
+bin\WinGuard.exe attack triage
+
+# 7. Compare a custom workload across Permissive vs Strict vs Adaptive
 bin\WinGuard.exe experiment compare "bin\burst_cpu.exe burst 2"
 
-# 5. Inspect compiled security policy rules
+# 8. Inspect compiled security policy rules
 bin\WinGuard.exe policy show policies\adaptive.policy
 ```
 
@@ -218,6 +233,7 @@ Generated benchmark reports and telemetry logs are written directly to `results/
 - `results/benchmark_report.md`: Markdown comparison matrix and evaluation summary.
 - `results/experiment_comparison.csv`: CSV comparison data across all tested paradigms.
 - `results/telemetry_pid*.csv`: High-frequency delta telemetry streams.
+- `results/crash_dumps/*.dmp`: Diagnostic minidump crash captures for quarantined processes.
 
 ---
 
@@ -225,6 +241,7 @@ Generated benchmark reports and telemetry logs are written directly to `results/
 
 For deep technical details, kernel object breakdowns, threat models, and viva preparation, see the `docs/` directory:
 
+- [**Step-by-Step Usage & Run Guide** (`USAGE_GUIDE.md`)](USAGE_GUIDE.md): End-to-end command walkthrough, flags, custom policies, and troubleshooting.
 - [**System Architecture & Subsystems** (`docs/architecture.md`)](docs/architecture.md): High-level architecture, component breakdown, process creation sequence, and FSM transition matrix.
 - [**Windows Security Internals** (`docs/windows_internals.md`)](docs/windows_internals.md): Deep dive into `EJOB` structures, CPU rate hard caps, access tokens, `RESTRICTED_CODE`, Low MIC SACLs, SDDL, and `EmptyWorkingSet`.
 - [**Security & Threat Model** (`docs/security_model.md`)](docs/security_model.md): Threat scope, adversary assumptions, trust boundaries, and attack vector defense matrix.
