@@ -101,6 +101,11 @@ BOOL jm_terminate_job(JobContext* job, UINT exit_code);
 void jm_print_stats(const JobStats* stats, const JobLimits* limits);
 
 /**
+ * Retrieves the list of active process IDs currently assigned to the Job Object.
+ */
+BOOL jm_get_job_pids(JobContext* job, DWORD* pids, DWORD max_pids, DWORD* count);
+
+/**
  * Destroys the JobContext and closes the Windows Job Object handle.
  */
 void jm_close_job(JobContext* job);

@@ -33,3 +33,7 @@ escalation_threshold = 2
 decay_interval_sec = 10
 decay_step = 1
 auto_terminate_on_l3 = true
+workload_type = general
+elastic_throttling = true
+ignore_pure_compute_spikes = false
+min_productive_io_mb_s = 2.0

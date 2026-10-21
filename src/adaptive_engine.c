@@ -62,6 +62,50 @@ static void record_transition(AdaptiveEngine* engine, SecurityLevel from_level, 
                          actions ? actions : "None");
 }
 
+static BOOL triage_rogue_child_worker(AdaptiveEngine* engine) {
+    if (!engine || !engine->target_proc || !engine->target_proc->job) return FALSE;
+
+    DWORD pids[64] = {0};
+    DWORD count = 0;
+    if (!jm_get_job_pids(engine->target_proc->job, pids, 64, &count) || count <= 1) {
+        return FALSE; /* Only 1 process or cannot query */
+    }
+
+    DWORD coordinator_pid = engine->target_proc->pid;
+    DWORD worst_child_pid = 0;
+    SIZE_T max_memory = 0;
+
+    for (DWORD i = 0; i < count; ++i) {
+        DWORD pid = pids[i];
+        if (pid == coordinator_pid) continue; /* Protect the primary coordinator! */
+
+        HANDLE hChild = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE, FALSE, pid);
+        if (hChild) {
+            PROCESS_MEMORY_COUNTERS pmc;
+            if (GetProcessMemoryInfo(hChild, &pmc, sizeof(pmc))) {
+                if (pmc.WorkingSetSize > max_memory) {
+                    max_memory = pmc.WorkingSetSize;
+                    worst_child_pid = pid;
+                }
+            }
+            CloseHandle(hChild);
+        }
+    }
+
+    if (worst_child_pid != 0) {
+        HANDLE hVictim = OpenProcess(PROCESS_TERMINATE, FALSE, worst_child_pid);
+        if (hVictim) {
+            TerminateProcess(hVictim, 0xC000012D /* STATUS_COMMITMENT_LIMIT */);
+            CloseHandle(hVictim);
+            LOG_WARN("[TRIAGE] Selectively terminated rogue child worker PID %lu (Memory: %llu MB) to protect coordinator PID %lu",
+                     worst_child_pid, (unsigned long long)(max_memory / (1024 * 1024)), coordinator_pid);
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
 BOOL adaptive_apply_level_limits(AdaptiveEngine* engine, SecurityLevel target_level, const char* reason) {
     if (!engine || !engine->target_proc) return FALSE;
 
@@ -111,9 +155,13 @@ BOOL adaptive_apply_level_limits(AdaptiveEngine* engine, SecurityLevel target_le
             break;
 
         case LEVEL_3_QUARANTINED:
+            /* Phase 4: Freeze-Before-Kill & Diagnostic Minidump Capture */
+            pm_freeze_process(proc);
+            pm_generate_minidump(proc, L"results\\crash_dumps");
+
             if (engine->policy.auto_terminate_on_l3) {
                 snprintf(actions, sizeof(actions),
-                         "QUARANTINE ENFORCED: Immediate termination of Job Object processes (ExitCode 0xC0000420)");
+                         "QUARANTINE ENFORCED: Process frozen, minidump written, Job Object terminated (0xC0000420)");
                 if (proc->job) {
                     jm_terminate_job(proc->job, 0xC0000420);
                 } else if (proc->hProcess) {
@@ -129,7 +177,7 @@ BOOL adaptive_apply_level_limits(AdaptiveEngine* engine, SecurityLevel target_le
                     EmptyWorkingSet(proc->hProcess);
                 }
                 snprintf(actions, sizeof(actions),
-                         "CPU rate clamped to 5%% (HARD), active process limit clamped to 1, priority IDLE");
+                         "QUARANTINE ENFORCED: Process frozen, minidump written, priority IDLE");
             }
             break;
 
@@ -200,6 +248,16 @@ BOOL adaptive_record_violation(AdaptiveEngine* engine, const char* violation_typ
     if (!engine) return FALSE;
 
     EnterCriticalSection(&engine->cs);
+
+    /* Phase 2: Graduated Memory Triage - If memory pressure or allocation bomb, try to triage rogue child worker first */
+    if (violation_type && (strstr(violation_type, "MEMORY") || strstr(violation_type, "ALLOCATION"))) {
+        if (triage_rogue_child_worker(engine)) {
+            LOG_INFO("Adaptive Engine: Rogue child worker triaged and terminated. Coordinator PID %lu protected.",
+                     engine->target_proc ? engine->target_proc->pid : 0);
+            LeaveCriticalSection(&engine->cs);
+            return TRUE;
+        }
+    }
 
     engine->total_violations++;
     engine->current_violation_count++;

@@ -355,6 +355,34 @@ void jm_print_stats(const JobStats* stats, const JobLimits* limits) {
     fflush(stdout);
 }
 
+BOOL jm_get_job_pids(JobContext* job, DWORD* pids, DWORD max_pids, DWORD* count) {
+    if (!job || !job->hJob || !pids || max_pids == 0 || !count) return FALSE;
+    *count = 0;
+
+    DWORD buf_size = sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST) + (max_pids * sizeof(ULONG_PTR));
+    PJOBOBJECT_BASIC_PROCESS_ID_LIST pid_list = (PJOBOBJECT_BASIC_PROCESS_ID_LIST)malloc(buf_size);
+    if (!pid_list) return FALSE;
+
+    ZeroMemory(pid_list, buf_size);
+
+    DWORD ret_len = 0;
+    if (!QueryInformationJobObject(job->hJob, JobObjectBasicProcessIdList, pid_list, buf_size, &ret_len)) {
+        free(pid_list);
+        return FALSE;
+    }
+
+    DWORD num = pid_list->NumberOfProcessIdsInList;
+    if (num > max_pids) num = max_pids;
+
+    for (DWORD i = 0; i < num; ++i) {
+        pids[i] = (DWORD)pid_list->ProcessIdList[i];
+    }
+
+    *count = num;
+    free(pid_list);
+    return TRUE;
+}
+
 void jm_close_job(JobContext* job) {
     if (!job) return;
 

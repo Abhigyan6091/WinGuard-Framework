@@ -400,6 +400,108 @@ void pm_print_context(const ProcessContext* ctx) {
     fflush(stdout);
 }
 
+typedef LONG (NTAPI *pfnNtSuspendProcess)(HANDLE ProcessHandle);
+typedef LONG (NTAPI *pfnNtResumeProcess)(HANDLE ProcessHandle);
+
+BOOL pm_freeze_process(ProcessContext* ctx) {
+    if (!ctx || !ctx->hProcess || ctx->hProcess == INVALID_HANDLE_VALUE) return FALSE;
+
+    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+    if (hNtdll) {
+        pfnNtSuspendProcess NtSuspendProcess = (pfnNtSuspendProcess)GetProcAddress(hNtdll, "NtSuspendProcess");
+        if (NtSuspendProcess) {
+            LONG status = NtSuspendProcess(ctx->hProcess);
+            if (status >= 0) {
+                LOG_INFO("Successfully froze (suspended) process PID %lu via NtSuspendProcess.", ctx->pid);
+                return TRUE;
+            }
+        }
+    }
+
+    if (ctx->hThread && ctx->hThread != INVALID_HANDLE_VALUE) {
+        SuspendThread(ctx->hThread);
+        LOG_INFO("Suspended primary thread for PID %lu.", ctx->pid);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+BOOL pm_thaw_process(ProcessContext* ctx) {
+    if (!ctx || !ctx->hProcess || ctx->hProcess == INVALID_HANDLE_VALUE) return FALSE;
+
+    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+    if (hNtdll) {
+        pfnNtResumeProcess NtResumeProcess = (pfnNtResumeProcess)GetProcAddress(hNtdll, "NtResumeProcess");
+        if (NtResumeProcess) {
+            LONG status = NtResumeProcess(ctx->hProcess);
+            if (status >= 0) {
+                LOG_INFO("Successfully thawed (resumed) process PID %lu via NtResumeProcess.", ctx->pid);
+                return TRUE;
+            }
+        }
+    }
+
+    if (ctx->hThread && ctx->hThread != INVALID_HANDLE_VALUE) {
+        ResumeThread(ctx->hThread);
+        LOG_INFO("Resumed primary thread for PID %lu.", ctx->pid);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+typedef BOOL (WINAPI *pfnMiniDumpWriteDump)(
+    HANDLE hProcess,
+    DWORD ProcessId,
+    HANDLE hFile,
+    DWORD DumpType,
+    PVOID ExceptionParam,
+    PVOID UserStreamParam,
+    PVOID CallbackParam
+);
+
+BOOL pm_generate_minidump(ProcessContext* ctx, const WCHAR* dump_dir) {
+    if (!ctx || !ctx->hProcess || ctx->hProcess == INVALID_HANDLE_VALUE) return FALSE;
+
+    const WCHAR* dir = dump_dir ? dump_dir : L"results\\crash_dumps";
+    CreateDirectoryW(L"results", NULL);
+    CreateDirectoryW(dir, NULL);
+
+    WCHAR dump_path[MAX_PATH];
+    swprintf(dump_path, MAX_PATH, L"%ls\\minidump_pid%lu_%llu.dmp",
+             dir, ctx->pid, (unsigned long long)GetTickCount64());
+
+    HANDLE hFile = CreateFileW(dump_path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        LOG_WARN("Failed to create minidump file: %ls", dump_path);
+        return FALSE;
+    }
+
+    HMODULE hDbgHelp = LoadLibraryW(L"dbghelp.dll");
+    if (!hDbgHelp) {
+        CloseHandle(hFile);
+        LOG_WARN("Could not load dbghelp.dll for minidump generation.");
+        return FALSE;
+    }
+
+    pfnMiniDumpWriteDump pMiniDump = (pfnMiniDumpWriteDump)GetProcAddress(hDbgHelp, "MiniDumpWriteDump");
+    if (!pMiniDump) {
+        CloseHandle(hFile);
+        FreeLibrary(hDbgHelp);
+        return FALSE;
+    }
+
+    BOOL ok = pMiniDump(ctx->hProcess, ctx->pid, hFile, 0 /* MiniDumpNormal */, NULL, NULL, NULL);
+    CloseHandle(hFile);
+    FreeLibrary(hDbgHelp);
+
+    if (ok) {
+        LOG_INFO("Successfully captured diagnostic minidump: %ls", dump_path);
+    } else {
+        LOG_WARN("MiniDumpWriteDump failed for PID %lu (Win32 Error: %lu)", ctx->pid, GetLastError());
+    }
+    return ok;
+}
+
 void pm_free_context(ProcessContext* ctx) {
     if (!ctx) return;
 

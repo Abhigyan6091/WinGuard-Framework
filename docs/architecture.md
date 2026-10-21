@@ -131,8 +131,34 @@ Unlike static isolation containers or sandbox solutions that enforce invariant, 
   - **LEVEL 0 (OBSERVE)**: Baseline observation tier. Permissive quotas to prevent false-positive throttling on initialization bursts.
   - **LEVEL 1 (RESTRICTED)**: First-stage containment. CPU clamped to 35% hard cap, active process limit clamped to 4, priority dropped to `BELOW_NORMAL_PRIORITY_CLASS`.
   - **LEVEL 2 (CONTAINED)**: Severe containment. CPU clamped to 15% hard cap, active process limit clamped to 2, priority dropped to `IDLE_PRIORITY_CLASS`, working set flushed via `EmptyWorkingSet`.
-  - **LEVEL 3 (TERMINATE / QUARANTINE)**: Immediate emergency kill via `TerminateJobObject(hJob, 0xC0000420)`.
+  - **LEVEL 3 (TERMINATE / QUARANTINE)**: Terminal quarantine. Enforces clean process freezing (`NtSuspendProcess`), writes diagnostic crash minidump to `results/crash_dumps/`, and executes final termination via `TerminateJobObject(hJob, 0xC0000420)`.
 - **Time-Based Decay Demotion**: Tracks quiescent elapsed time. If a process remains free of violations for `decay_time_seconds`, the engine steps the state down (`LEVEL 2 -> LEVEL 1 -> LEVEL 0`), restoring operational capacity.
+
+### 3.8 Multi-Signal Workload Correlation & Elastic Throttling (`src/monitor.c`, `src/policy.c`)
+- **Limitation Solved**: Pure single-signal CPU metrics falsely clamp legitimate compute tasks (compilers, heavy simulations, code generation) that burst during normal operation.
+- **Correlated Multi-Signals**:
+  1. **Process I/O Rate**: Sampled via `GetProcessIoCounters`. Computes `current_io_rate_mb_s = (ReadBytes + WriteBytes) / delta_t`.
+  2. **Host System CPU Contention**: Sampled via `GetSystemTimes`. Calculates overall system CPU busy percentage:
+     $$\Delta \text{Total} = \Delta \text{Kernel} + \Delta \text{User}, \quad \text{Host CPU \%} = \frac{\Delta \text{Total} - \Delta \text{Idle}}{\Delta \text{Total}} \times 100\%$$
+- **Elastic Suppression Logic**:
+  - If `elastic_throttling = true` and `host_cpu_percent < 80%`, bursts are permitted without penalty.
+  - If `workload_type = compute_batch` and I/O throughput $\ge$ `min_productive_io_mb_s`, or `workload_type = simulation`, CPU spikes are suppressed from triggering state escalations.
+
+### 3.9 Graduated Memory Triage & Rogue Child Worker Termination (`src/adaptive_engine.c`, `src/job_manager.c`)
+- **Limitation Solved**: In standard Job Objects, memory commit violations terminate the entire job object indiscriminately, killing innocent coordinator processes and sibling workers.
+- **Selective Triage Algorithm**:
+  1. On memory pressure or velocity violation, query active PIDs via `QueryInformationJobObject(JobObjectBasicProcessIdList)`.
+  2. Inspect each child process memory working set and commitment via `GetProcessMemoryInfo`.
+  3. Identify the specific rogue child consuming maximal memory while protecting the primary coordinator PID (`ctx->pid`).
+  4. Terminate only the offending child process with status `0xC000012D` (`STATUS_COMMITMENT_LIMIT`). The coordinator and healthy workers remain alive and continue execution.
+
+### 3.10 Memory Allocation Velocity ($\frac{dM}{dt}$) & NT Low-Memory Notifications (`src/monitor.c`)
+- **Rapid Allocation Bombs**: Computes memory derivative $\frac{dM}{dt}$. Spikes exceeding $150\text{ MB/s}$ trigger `ALLOCATION_ACCELERATION_BOMB` before virtual memory exhaustion occurs.
+- **Kernel Low-Memory Integration**: Registers a kernel notification handle via `CreateMemoryResourceNotification(LowMemoryResourceNotification)`. When Windows signals system-wide physical memory starvation, WinGuard proactively triggers working set trimming via `K32EmptyWorkingSet()` across isolated workloads to assist host stability.
+
+### 3.11 Freeze-Before-Kill & Diagnostic Minidump Capture (`src/process_manager.c`)
+- **Diagnostic Forensics**: Before killing a quarantined process tree, WinGuard freezes all threads using dynamic `NtSuspendProcess` (from `ntdll.dll`).
+- **Minidump Writing**: Dynamically loads `dbghelp.dll` and invokes `MiniDumpWriteDump` (`MiniDumpWithProcessThreadData | MiniDumpWithUnloadedModules`) writing `.dmp` files to `results/crash_dumps/` before calling `TerminateJobObject`. This enables post-mortem root-cause analysis in WinDbg or Visual Studio.
 
 ---
 

@@ -381,6 +381,49 @@ static int handle_attack(int argc, WCHAR** argv) {
             (WCHAR*)L"--monitor"
         };
         return handle_run(8, sub_argv);
+    } else if (_wcsicmp(argv[2], L"compiler") == 0) {
+        LOG_INFO("Executing Workload 9: Heavy Compute / Build Simulation Multi-Signal Correlation...");
+        WCHAR* sub_argv[] = {
+            argv[0],
+            (WCHAR*)L"run",
+            (WCHAR*)L"bin\\compiler_simulator.exe",
+            (WCHAR*)L"2",
+            (WCHAR*)L"--policy",
+            (WCHAR*)L"policies\\compute_workload.policy",
+            (WCHAR*)L"--monitor",
+            (WCHAR*)L"--monitor-interval",
+            (WCHAR*)L"25"
+        };
+        return handle_run(9, sub_argv);
+    } else if (_wcsicmp(argv[2], L"triage") == 0) {
+        LOG_INFO("Executing Workload 10: Graduated Memory Triage & Rogue Child Worker Termination...");
+        WCHAR* sub_argv[] = {
+            argv[0],
+            (WCHAR*)L"run",
+            (WCHAR*)L"bin\\rogue_worker_bomb.exe",
+            (WCHAR*)L"--policy",
+            (WCHAR*)L"policies\\adaptive.policy",
+            (WCHAR*)L"--memory-limit",
+            (WCHAR*)L"80",
+            (WCHAR*)L"--monitor",
+            (WCHAR*)L"--monitor-interval",
+            (WCHAR*)L"25"
+        };
+        return handle_run(9, sub_argv);
+    } else if (_wcsicmp(argv[2], L"acceleration") == 0) {
+        LOG_INFO("Executing Workload 11: Allocation Acceleration (Memory Velocity Bomb)...");
+        WCHAR* sub_argv[] = {
+            argv[0],
+            (WCHAR*)L"run",
+            (WCHAR*)L"bin\\allocation_acceleration.exe",
+            (WCHAR*)L"180",
+            (WCHAR*)L"--policy",
+            (WCHAR*)L"policies\\adaptive.policy",
+            (WCHAR*)L"--monitor",
+            (WCHAR*)L"--monitor-interval",
+            (WCHAR*)L"25"
+        };
+        return handle_run(9, sub_argv);
     } else if (_wcsicmp(argv[2], L"all") == 0) {
         LOG_INFO("Executing Complete Adversarial Workload Suite (8 Workloads)...");
         const WCHAR* attacks[] = {

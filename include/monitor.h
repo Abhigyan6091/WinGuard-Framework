@@ -57,6 +57,17 @@ typedef struct {
     uint64_t prev_job_cpu_100ns;
     uint64_t prev_wall_clock_100ns;
     double sum_cpu_samples;
+
+    /* Advanced Multi-Signal Telemetry (v2.0) */
+    uint64_t prev_io_bytes;
+    double current_io_rate_mb_s;
+    ULARGE_INTEGER prev_sys_idle;
+    ULARGE_INTEGER prev_sys_kernel;
+    ULARGE_INTEGER prev_sys_user;
+    double host_cpu_percent;
+    uint64_t prev_memory_commit_bytes;
+    double current_alloc_velocity_mb_s;
+    HANDLE hLowMemNotification;
 } MonitorContext;
 
 /**

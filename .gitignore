@@ -5,9 +5,11 @@ bin/*.ilk
 *.obj
 *.o
 
-# Ephemeral runtime telemetry logs
+# Ephemeral runtime telemetry logs and crash dumps
 results/telemetry_pid*.csv
 results/test_*_telemetry.csv
+results/crash_dumps/*.dmp
+!results/crash_dumps/.gitkeep
 
 # Sandbox runtime outputs
 sandbox/output/*

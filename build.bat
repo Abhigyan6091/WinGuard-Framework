@@ -97,5 +97,32 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b %ERRORLEVEL%
 )
 
+echo [BUILD] Compiling workload 9 (compiler_simulator.exe)...
+clang -std=c11 -Wall -Wextra -mconsole -DUNICODE -D_UNICODE ^
+    attacks/compiler_simulator.c -o bin/compiler_simulator.exe -lkernel32
+
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] compiler_simulator compilation failed.
+    exit /b %ERRORLEVEL%
+)
+
+echo [BUILD] Compiling workload 10 (rogue_worker_bomb.exe)...
+clang -std=c11 -Wall -Wextra -mconsole -DUNICODE -D_UNICODE ^
+    attacks/rogue_worker_bomb.c -o bin/rogue_worker_bomb.exe -lkernel32
+
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] rogue_worker_bomb compilation failed.
+    exit /b %ERRORLEVEL%
+)
+
+echo [BUILD] Compiling workload 11 (allocation_acceleration.exe)...
+clang -std=c11 -Wall -Wextra -mconsole -DUNICODE -D_UNICODE ^
+    attacks/allocation_acceleration.c -o bin/allocation_acceleration.exe -lkernel32
+
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] allocation_acceleration compilation failed.
+    exit /b %ERRORLEVEL%
+)
+
 echo [BUILD] Build successful! All binaries created in .\bin\
 exit /b 0

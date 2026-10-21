@@ -71,9 +71,24 @@ Unlike static sandboxes that permanently lock down or abort, WinGuard can recove
 **Memory Eviction via `EmptyWorkingSet`**:  
 When entering LEVEL 2, WinGuard invokes `K32EmptyWorkingSet()`. The Windows NT Memory Manager immediately flushes the process's resident physical pages back to pagefiles and standby lists. In our benchmarks, this instantly shrank physical RAM usage by **79.2%** (from ~50 MB to 10.5 MB) without terminating the process.
 
-### 5. Policy Compiler & Adversarial Test Suite
-- **Declarative Policies**: An INI-style parser compiles `.policy` files into strongly-typed C structures with semantic validation. Built-in profiles include `permissive.policy`, `strict.policy`, and `adaptive.policy`.
-- **8 Targeted Adversarial Workloads**: We built self-contained attack binaries in `attacks/` to test every security boundary:
+### 5. Advanced Engine Enhancements
+To eliminate common containment drawbacks (such as false-positive clamping of heavy compilers or ungraceful whole-job killing), WinGuard includes four advanced subsystems:
+1. **Multi-Signal Workload Correlation & Elastic Throttling**:
+   - Rather than judging a process purely on instantaneous CPU utilization, the monitor correlates CPU usage with productive disk I/O rates (`GetProcessIoCounters`) and host system CPU contention (`GetSystemTimes`).
+   - Pure compute tasks (simulations, build tools) with active file pipelines or idle host headroom are permitted to burst without being falsely clamped.
+2. **Graduated Memory Triage & Rogue Child Worker Termination**:
+   - When a multi-process workload experiences memory pressure, WinGuard queries child processes using `JOBOBJECT_BASIC_PROCESS_ID_LIST` and ranks them by memory consumption (`GetProcessMemoryInfo`).
+   - Instead of terminating the entire job, WinGuard selectively targets and terminates only the offending rogue worker (`0xC000012D`), preserving the parent coordinator and innocent sibling workers.
+3. **Allocation Velocity Bomb Detection & Host Low-Memory Notification**:
+   - Tracks the rate of memory commitment ($\frac{dM}{dt}$). Sudden spikes exceeding 150 MB/s are flagged as `ALLOCATION_ACCELERATION_BOMB` anomalies before OS exhaustion occurs.
+   - Listens to Windows NT kernel low-memory resource notifications (`CreateMemoryResourceNotification`) and proactively flushes working sets system-wide.
+4. **Freeze-Before-Kill & Diagnostic Crash Dumps**:
+   - Before enforcing LEVEL 3 terminal quarantine, the engine suspends the process cleanly via dynamic `NtSuspendProcess`.
+   - Generates complete post-mortem diagnostic crash dumps (`MiniDumpWriteDump` via `dbghelp.dll`) in `results/crash_dumps/` for forensic analysis before executing final job shutdown.
+
+### 6. Policy Compiler & Adversarial Test Suite
+- **Declarative Policies**: An INI-style parser compiles `.policy` files into strongly-typed C structures with semantic validation. Built-in profiles include `permissive.policy`, `strict.policy`, `adaptive.policy`, and `compute_workload.policy`.
+- **Targeted Adversarial Workloads**: We built self-contained attack and validation binaries in `attacks/` to test every security boundary:
   1. `process_stress`: Recursive fork bomb (50x) &rarr; blocked by kernel active process quota (error 1816).
   2. `memory_stress`: 100+ MB virtual memory allocation &rarr; blocked by job memory commit limit (error 1455).
   3. `cpu_stress`: Multi-threaded infinite mathematical burn &rarr; throttled by job hard rate caps.
@@ -82,8 +97,11 @@ When entering LEVEL 2, WinGuard invokes `K32EmptyWorkingSet()`. The Windows NT M
   6. `filesystem_probe`: Unauthorized host writes & system directory tampering &rarr; denied by NTFS SACL / Low MIC.
   7. `adaptive_probe`: Multi-phase dynamic attack & cooldown &rarr; exercises multi-tier escalation and decay.
   8. `repeated_violation`: Multi-vector sustained pressure &rarr; triggers quarantine termination (`0xC0000420`).
+  9. `compiler_simulator`: Heavy compute with active disk I/O &rarr; verified under elastic throttling without false clamping.
+  10. `rogue_worker_bomb`: Coordinator with innocent & leaking child processes &rarr; rogue worker selectively triaged.
+  11. `allocation_acceleration`: Ultra-high velocity allocation (>800 MB/s) &rarr; caught by velocity bomb detector.
 
-Running `WinGuard.exe attack all` runs the complete suite sequentially and prints an automated containment matrix (100% containment across all 8 vectors).
+Running `WinGuard.exe attack all` runs the core test matrix, and `tests/test_v2_upgrades.ps1` runs the end-to-end upgrade verification suite.
 
 ---
 

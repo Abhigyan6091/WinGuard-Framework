@@ -61,6 +61,12 @@ typedef struct {
     uint32_t decay_interval_sec;       /* Benign seconds required before demoting level */
     uint32_t decay_step;               /* Levels to demote per decay tick */
     BOOL auto_terminate_on_l3;         /* TRUE = terminate workload upon reaching LEVEL 3 */
+
+    /* Advanced Multi-Signal & Elastic Settings (v2.0) */
+    char workload_type[32];            /* "standard", "compute_batch", "simulation" */
+    BOOL elastic_throttling;           /* TRUE = throttle CPU only if system is under contention */
+    BOOL ignore_pure_compute_spikes;   /* TRUE = do not escalate on CPU alone */
+    double min_productive_io_mb_s;     /* I/O rate (MB/s) threshold above which CPU spike is considered productive */
 } PolicyConfig;
 
 /**

@@ -234,6 +234,14 @@ BOOL policy_parse_file(const WCHAR* file_path, PolicyConfig* out_config, char* e
                 out_config->decay_step = (uint32_t)atoi(val);
             } else if (_stricmp(key, "auto_terminate_on_l3") == 0) {
                 out_config->auto_terminate_on_l3 = parse_bool(val);
+            } else if (_stricmp(key, "workload_type") == 0) {
+                strncpy(out_config->workload_type, val, sizeof(out_config->workload_type) - 1);
+            } else if (_stricmp(key, "elastic_throttling") == 0) {
+                out_config->elastic_throttling = parse_bool(val);
+            } else if (_stricmp(key, "ignore_pure_compute_spikes") == 0) {
+                out_config->ignore_pure_compute_spikes = parse_bool(val);
+            } else if (_stricmp(key, "min_productive_io_mb_s") == 0) {
+                out_config->min_productive_io_mb_s = atof(val);
             }
         }
     }
@@ -267,6 +275,10 @@ BOOL policy_get_default(const char* name, PolicyConfig* out_config) {
         out_config->decay_interval_sec = 60;
         out_config->decay_step = 1;
         out_config->auto_terminate_on_l3 = TRUE;
+        strncpy(out_config->workload_type, "standard", sizeof(out_config->workload_type) - 1);
+        out_config->elastic_throttling = FALSE;
+        out_config->ignore_pure_compute_spikes = FALSE;
+        out_config->min_productive_io_mb_s = 0.5;
         return TRUE;
     } else if (_stricmp(name, "permissive") == 0) {
         strncpy(out_config->name, "permissive", sizeof(out_config->name) - 1);
@@ -286,6 +298,10 @@ BOOL policy_get_default(const char* name, PolicyConfig* out_config) {
         out_config->decay_interval_sec = 5;
         out_config->decay_step = 1;
         out_config->auto_terminate_on_l3 = FALSE;
+        strncpy(out_config->workload_type, "compute_batch", sizeof(out_config->workload_type) - 1);
+        out_config->elastic_throttling = TRUE;
+        out_config->ignore_pure_compute_spikes = TRUE;
+        out_config->min_productive_io_mb_s = 0.1;
         return TRUE;
     } else {
         /* Default: adaptive policy */
@@ -306,6 +322,10 @@ BOOL policy_get_default(const char* name, PolicyConfig* out_config) {
         out_config->decay_interval_sec = 10;
         out_config->decay_step = 1;
         out_config->auto_terminate_on_l3 = TRUE;
+        strncpy(out_config->workload_type, "standard", sizeof(out_config->workload_type) - 1);
+        out_config->elastic_throttling = FALSE;
+        out_config->ignore_pure_compute_spikes = FALSE;
+        out_config->min_productive_io_mb_s = 0.5;
         return TRUE;
     }
 }
@@ -380,5 +400,9 @@ void policy_print(const PolicyConfig* config) {
     printf(" Adaptive Decay Interval : %u seconds -> demote %u level(s)\n",
            config->decay_interval_sec, config->decay_step);
     printf(" Auto-Terminate on L3    : %s\n", config->auto_terminate_on_l3 ? "YES" : "NO");
+    printf(" Workload Profile        : %s\n", config->workload_type[0] ? config->workload_type : "standard");
+    printf(" Elastic Throttling      : %s\n", config->elastic_throttling ? "ENABLED" : "DISABLED");
+    printf(" Ignore Pure Compute     : %s\n", config->ignore_pure_compute_spikes ? "YES" : "NO");
+    printf(" Min Productive I/O Rate : %.2f MB/s\n", config->min_productive_io_mb_s);
     printf("=======================================================\n\n");
 }

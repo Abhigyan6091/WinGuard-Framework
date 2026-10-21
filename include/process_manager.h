@@ -128,6 +128,21 @@ BOOL pm_refresh_state(ProcessContext* ctx);
 void pm_print_context(const ProcessContext* ctx);
 
 /**
+ * Freezes (suspends) all threads in the process tree using NtSuspendProcess.
+ */
+BOOL pm_freeze_process(ProcessContext* ctx);
+
+/**
+ * Thaws (resumes) all threads in the process tree using NtResumeProcess.
+ */
+BOOL pm_thaw_process(ProcessContext* ctx);
+
+/**
+ * Generates an automated crash minidump before terminal quarantine.
+ */
+BOOL pm_generate_minidump(ProcessContext* ctx, const WCHAR* dump_dir);
+
+/**
  * Closes process, thread, and Job Object handles, and frees the context memory.
  */
 void pm_free_context(ProcessContext* ctx);

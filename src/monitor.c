@@ -52,6 +52,49 @@ static DWORD WINAPI monitor_worker_thread(LPVOID param) {
 
         EnterCriticalSection(&mon->cs);
 
+        /* Query system-wide CPU for elastic throttling */
+        FILETIME sys_idle_ft, sys_kern_ft, sys_usr_ft;
+        if (GetSystemTimes(&sys_idle_ft, &sys_kern_ft, &sys_usr_ft)) {
+            ULARGE_INTEGER cur_idle, cur_kern, cur_usr;
+            cur_idle.LowPart = sys_idle_ft.dwLowDateTime; cur_idle.HighPart = sys_idle_ft.dwHighDateTime;
+            cur_kern.LowPart = sys_kern_ft.dwLowDateTime; cur_kern.HighPart = sys_kern_ft.dwHighDateTime;
+            cur_usr.LowPart = sys_usr_ft.dwLowDateTime; cur_usr.HighPart = sys_usr_ft.dwHighDateTime;
+
+            uint64_t delta_idle = (cur_idle.QuadPart >= mon->prev_sys_idle.QuadPart) ? (cur_idle.QuadPart - mon->prev_sys_idle.QuadPart) : 0;
+            uint64_t delta_sys_total = ((cur_kern.QuadPart >= mon->prev_sys_kernel.QuadPart) ? (cur_kern.QuadPart - mon->prev_sys_kernel.QuadPart) : 0) +
+                                       ((cur_usr.QuadPart >= mon->prev_sys_user.QuadPart) ? (cur_usr.QuadPart - mon->prev_sys_user.QuadPart) : 0);
+            if (delta_sys_total > 0 && delta_sys_total >= delta_idle) {
+                mon->host_cpu_percent = ((double)(delta_sys_total - delta_idle) / (double)delta_sys_total) * 100.0;
+            }
+            mon->prev_sys_idle = cur_idle;
+            mon->prev_sys_kernel = cur_kern;
+            mon->prev_sys_user = cur_usr;
+        }
+
+        /* Query process I/O counters for productive pipeline detection */
+        if (mon->target_proc->hProcess) {
+            IO_COUNTERS ioc;
+            if (GetProcessIoCounters(mon->target_proc->hProcess, &ioc)) {
+                uint64_t cur_io = ioc.ReadTransferCount + ioc.WriteTransferCount;
+                uint64_t delta_io = (cur_io >= mon->prev_io_bytes) ? (cur_io - mon->prev_io_bytes) : 0;
+                double delta_sec_io = (double)(current_time.QuadPart - mon->prev_wall_clock_100ns) / 10000000.0;
+                if (delta_sec_io > 0.001) {
+                    mon->current_io_rate_mb_s = ((double)delta_io / (1024.0 * 1024.0)) / delta_sec_io;
+                }
+                mon->prev_io_bytes = cur_io;
+            }
+        }
+
+        /* Check host low physical memory notification */
+        if (mon->hLowMemNotification) {
+            BOOL low_mem_state = FALSE;
+            if (QueryMemoryResourceNotification(mon->hLowMemNotification, &low_mem_state) && low_mem_state) {
+                if (mon->target_proc->hProcess) {
+                    K32EmptyWorkingSet(mon->target_proc->hProcess);
+                }
+            }
+        }
+
         /* Query metrics from Job Object if attached */
         if (mon->target_proc->job) {
             JobStats stats;
@@ -74,6 +117,16 @@ static DWORD WINAPI monitor_worker_thread(LPVOID param) {
 
                 mon->prev_job_cpu_100ns = current_cpu_100ns;
 
+                /* Track memory allocation velocity (dM/dt) */
+                double delta_sec_mem = (double)delta_wall_100ns / 10000000.0;
+                if (mon->prev_memory_commit_bytes > 0 && peak_memory_bytes > mon->prev_memory_commit_bytes && delta_sec_mem > 0.001) {
+                    uint64_t delta_mem = peak_memory_bytes - mon->prev_memory_commit_bytes;
+                    mon->current_alloc_velocity_mb_s = ((double)delta_mem / (1024.0 * 1024.0)) / delta_sec_mem;
+                } else {
+                    mon->current_alloc_velocity_mb_s = 0.0;
+                }
+                mon->prev_memory_commit_bytes = peak_memory_bytes;
+
                 /* Threshold & Policy Violation Check */
                 JobLimits* lim = &mon->target_proc->job->current_limits;
                 if (lim->active_process_limit > 0 && active_procs > lim->active_process_limit) {
@@ -82,6 +135,13 @@ static DWORD WINAPI monitor_worker_thread(LPVOID param) {
                     if (mon->engine) {
                         adaptive_record_violation(mon->engine, "PROCESS_QUOTA_EXCEEDED", "Concurrent process count exceeded limit");
                     }
+                } else if (mon->current_alloc_velocity_mb_s > 150.0) {
+                    /* Rapid Memory Bomb Detection */
+                    status = "VIOLATION_ALLOCATION_BOMB";
+                    mon->summary.total_violations++;
+                    if (mon->engine) {
+                        adaptive_record_violation(mon->engine, "ALLOCATION_ACCELERATION_BOMB", "Memory allocation rate exceeded safe threshold (>150 MB/s)");
+                    }
                 } else if (lim->job_memory_bytes > 0 && peak_memory_bytes >= (uint64_t)((double)lim->job_memory_bytes * 0.90)) {
                     status = "VIOLATION_MEMORY_LIMIT";
                     mon->summary.total_violations++;
@@ -89,10 +149,36 @@ static DWORD WINAPI monitor_worker_thread(LPVOID param) {
                         adaptive_record_violation(mon->engine, "MEMORY_QUOTA_PRESSURE", "Committed memory reached 90% quota threshold");
                     }
                 } else if (lim->cpu_rate_limit_percent > 0 && cpu_pct > 8.0 && cpu_pct > (double)lim->cpu_rate_limit_percent) {
-                    status = "THROTTLED_CPU_LIMIT";
-                    mon->summary.total_violations++;
+                    /* Advanced Multi-Signal & Elastic Check (v2.0) */
+                    BOOL suppress_cpu_spike = FALSE;
+                    const char* suppression_reason = NULL;
+
                     if (mon->engine) {
-                        adaptive_record_violation(mon->engine, "CPU_SPIKE", "CPU utilization spiked above configured rate cap");
+                        const PolicyConfig* pol = &mon->engine->policy;
+                        if (pol->ignore_pure_compute_spikes || _stricmp(pol->workload_type, "simulation") == 0) {
+                            suppress_cpu_spike = TRUE;
+                            suppression_reason = "PERMITTED_SIMULATION";
+                        } else if (_stricmp(pol->workload_type, "compute_batch") == 0 &&
+                                   mon->current_io_rate_mb_s >= (pol->min_productive_io_mb_s > 0 ? pol->min_productive_io_mb_s : 0.2)) {
+                            suppress_cpu_spike = TRUE;
+                            suppression_reason = "PRODUCTIVE_IO_PIPELINE";
+                        } else if (pol->elastic_throttling && mon->host_cpu_percent < 80.0) {
+                            suppress_cpu_spike = TRUE;
+                            suppression_reason = "ELASTIC_PERMITTED";
+                        }
+                    }
+
+                    if (suppress_cpu_spike) {
+                        status = suppression_reason;
+                        if (mon->engine) {
+                            adaptive_check_decay(mon->engine);
+                        }
+                    } else {
+                        status = "THROTTLED_CPU_LIMIT";
+                        mon->summary.total_violations++;
+                        if (mon->engine) {
+                            adaptive_record_violation(mon->engine, "CPU_SPIKE", "CPU utilization spiked above configured rate cap");
+                        }
                     }
                 } else if (mon->engine) {
                     adaptive_check_decay(mon->engine);
@@ -198,6 +284,15 @@ BOOL monitor_create(ProcessContext* proc, AdaptiveEngine* engine, DWORD interval
     SYSTEM_INFO sys_info;
     GetSystemInfo(&sys_info);
     mon->num_processors = (sys_info.dwNumberOfProcessors > 0) ? sys_info.dwNumberOfProcessors : 1;
+
+    mon->hLowMemNotification = CreateMemoryResourceNotification(LowMemoryResourceNotification);
+
+    FILETIME s_idle, s_kern, s_usr;
+    if (GetSystemTimes(&s_idle, &s_kern, &s_usr)) {
+        mon->prev_sys_idle.LowPart = s_idle.dwLowDateTime; mon->prev_sys_idle.HighPart = s_idle.dwHighDateTime;
+        mon->prev_sys_kernel.LowPart = s_kern.dwLowDateTime; mon->prev_sys_kernel.HighPart = s_kern.dwHighDateTime;
+        mon->prev_sys_user.LowPart = s_usr.dwLowDateTime; mon->prev_sys_user.HighPart = s_usr.dwHighDateTime;
+    }
 
     mon->hStopEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
     if (!mon->hStopEvent) {
@@ -336,6 +431,11 @@ void monitor_free(MonitorContext* mon) {
     if (mon->hStopEvent) {
         CloseHandle(mon->hStopEvent);
         mon->hStopEvent = NULL;
+    }
+
+    if (mon->hLowMemNotification) {
+        CloseHandle(mon->hLowMemNotification);
+        mon->hLowMemNotification = NULL;
     }
 
     if (mon->csv_file) {
