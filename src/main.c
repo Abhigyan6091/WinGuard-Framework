@@ -394,7 +394,7 @@ static int handle_attack(int argc, WCHAR** argv) {
             (WCHAR*)L"--monitor-interval",
             (WCHAR*)L"25"
         };
-        return handle_run(9, sub_argv);
+        return handle_run((int)(sizeof(sub_argv) / sizeof(sub_argv[0])), sub_argv);
     } else if (_wcsicmp(argv[2], L"triage") == 0) {
         LOG_INFO("Executing Workload 10: Graduated Memory Triage & Rogue Child Worker Termination...");
         WCHAR* sub_argv[] = {
@@ -409,7 +409,7 @@ static int handle_attack(int argc, WCHAR** argv) {
             (WCHAR*)L"--monitor-interval",
             (WCHAR*)L"25"
         };
-        return handle_run(9, sub_argv);
+        return handle_run((int)(sizeof(sub_argv) / sizeof(sub_argv[0])), sub_argv);
     } else if (_wcsicmp(argv[2], L"acceleration") == 0) {
         LOG_INFO("Executing Workload 11: Allocation Acceleration (Memory Velocity Bomb)...");
         WCHAR* sub_argv[] = {
@@ -423,7 +423,7 @@ static int handle_attack(int argc, WCHAR** argv) {
             (WCHAR*)L"--monitor-interval",
             (WCHAR*)L"25"
         };
-        return handle_run(9, sub_argv);
+        return handle_run((int)(sizeof(sub_argv) / sizeof(sub_argv[0])), sub_argv);
     } else if (_wcsicmp(argv[2], L"all") == 0) {
         LOG_INFO("Executing Complete Adversarial Workload Suite (8 Workloads)...");
         const WCHAR* attacks[] = {

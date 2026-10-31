@@ -8,14 +8,14 @@
 | Evaluation Metric | Permissive Baseline | Static Strict | Adaptive WinGuard |
 |:---|:---:|:---:|:---:|
 | **Policy Profile** | `policies\permissive.policy` | `policies\strict.policy` | `policies\adaptive_test.policy` |
-| **Wall Clock Duration** | `2.11 s` | `2.11 s` | `2.09 s` |
-| **User CPU Time** | `750 ms` | `765 ms` | `781 ms` |
-| **Kernel CPU Time** | `78 ms` | `62 ms` | `31 ms` |
-| **Peak CPU Utilization** | `14.44%` | `14.10%` | `15.31%` |
-| **Average CPU Utilization** | `2.59%` | `2.48%` | `2.45%` |
-| **Peak Committed Memory** | `50.63 MB` | `50.62 MB` | `10.55 MB` |
+| **Wall Clock Duration** | `2.14 s` | `0.73 s` | `2.12 s` |
+| **User CPU Time** | `781 ms` | `781 ms` | `765 ms` |
+| **Kernel CPU Time** | `62 ms` | `15 ms` | `62 ms` |
+| **Peak CPU Utilization** | `18.30%` | `15.27%` | `14.63%` |
+| **Average CPU Utilization** | `2.34%` | `7.79%` | `2.49%` |
+| **Peak Committed Memory** | `50.63 MB` | `10.54 MB` | `10.55 MB` |
 | **Concurrent Processes** | `1` | `1` | `1` |
-| **Violations Logged** | `0` | `0` | `5` |
+| **Violations Logged** | `5` | `1` | `5` |
 | **Dynamic Escalations** | N/A (Static) | N/A (Static) | `2` |
 | **Dynamic Decay Demotions** | N/A (Static) | N/A (Static) | `1` |
 | **Adaptation Latency** | N/A | N/A | `281.0 ms` |
