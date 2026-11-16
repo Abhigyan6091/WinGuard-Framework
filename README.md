@@ -243,12 +243,10 @@ Generated benchmark reports and telemetry logs are written directly to `results/
 
 ## Detailed Technical Documentation
 
-For deep technical details, kernel object breakdowns, threat models, and viva preparation, see the `docs/` directory:
+For deep technical details, kernel object breakdowns, and threat models, see the `docs/` directory:
 
 - [**Step-by-Step Usage & Run Guide** (`USAGE_GUIDE.md`)](USAGE_GUIDE.md): End-to-end command walkthrough, flags, custom policies, and troubleshooting.
 - [**System Architecture & Subsystems** (`docs/architecture.md`)](docs/architecture.md): High-level architecture, component breakdown, process creation sequence, and FSM transition matrix.
 - [**Windows Security Internals** (`docs/windows_internals.md`)](docs/windows_internals.md): Deep dive into `EJOB` structures, CPU rate hard caps, access tokens, `RESTRICTED_CODE`, Low MIC SACLs, SDDL, and `EmptyWorkingSet`.
 - [**Security & Threat Model** (`docs/security_model.md`)](docs/security_model.md): Threat scope, adversary assumptions, trust boundaries, and attack vector defense matrix.
 - [**Empirical Benchmarking & Performance Analysis** (`docs/experiments.md`)](docs/experiments.md): Evaluation methodology, metric breakdowns, adaptation latency, and trade-off analysis.
-- [**Architectural Boundaries & Limitations** (`docs/limitations.md`)](docs/limitations.md): User-mode vs. kernel drivers, direct NT syscall evasion analysis, and future roadmap (ETW, Minifilter).
-- [**Viva Voce Defense Guide & Q&A** (`docs/viva.md`)](docs/viva.md): 13 comprehensive questions and technical model answers for project presentation and defense.

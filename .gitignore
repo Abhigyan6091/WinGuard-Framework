@@ -24,3 +24,10 @@ sandbox/temp/*
 *.swp
 *.DS_Store
 Thumbs.db
+
+# Internal audit, defense notes and private documentation
+docs/deep_dive.md
+docs/*deep_dive*.md
+docs/viva.md
+docs/limitations.md
+
