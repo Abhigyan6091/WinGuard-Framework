@@ -56,7 +56,7 @@ This guide prepares the author for in-depth academic and technical examinations 
 
 ### Q8: What is "Adaptation Latency" and how is it measured?
 > **Model Answer:**  
-> Adaptation latency is the total wall-clock duration elapsed from the onset of a policy-violating behavioral event (such as a CPU burst or memory allocation wave) to the moment the Adaptive State Machine reconfigures kernel containment parameters. In WinGuard's empirical benchmarks, this is measured using monotonic millisecond timestamps (`transitions[0].timestamp_ms - start_tick`) and was measured at **281.0 ms**.
+> Adaptation latency is the total wall-clock duration elapsed from the onset of a policy-violating behavioral event (such as a CPU burst or memory allocation wave) to the moment the Adaptive State Machine reconfigures kernel containment parameters. In WinGuard's empirical benchmarks, this is measured using monotonic millisecond timestamps (`transitions[0].timestamp_ms - start_tick`) and was measured at **309.4 +/- 23.2 ms** across 10 repeated benchmark trials.
 
 ### Q9: How does WinGuard prevent state "flapping" or oscillation between escalation and decay?
 > **Model Answer:**  
@@ -64,9 +64,12 @@ This guide prepares the author for in-depth academic and technical examinations 
 > 1. **Violation Thresholds with Hysteresis**: Escalation requires $N$ consecutive violation sampling ticks ($N \ge 2$), filtering out transient, benign noise.
 > 2. **Extended Quiescent Decay Timers**: De-escalation (demotion) requires an uninterrupted period of benign behavior (e.g., 1000–5000 ms). Any single violation tick during this interval instantly resets the decay countdown to zero.
 
-### Q10: What does `EmptyWorkingSet` actually do when WinGuard escalates to LEVEL 2?
+### Q10: What does `EmptyWorkingSet` actually do when WinGuard escalates to LEVEL 2, and how does it differ from memory commit limits?
 > **Model Answer:**  
-> Calling `K32EmptyWorkingSet(hProcess)` invokes the Windows NT Memory Manager to remove all resident physical pages from the target process's working set. The modified pages are written back to the pagefile or mapped files, and the page frames are returned to the standby/free lists. This immediately reduces the process's physical memory footprint (in our benchmarks, dropping from ~50 MB to 10.55 MB), relieving host memory pressure without aborting the process.
+> It is vital to distinguish between **Virtual Commit Limit** and **Physical Working Set**:
+> 1. **Virtual Commit Limit (Job Object)**: In `adaptive_test.policy`, `max_memory_mb = 20`. This hard kernel cap prevents the process from committing more than 20 MB of virtual address space; attempts to allocate further (e.g., the probe's attempt to allocate 50 MB) fail at the `VirtualAlloc` boundary with Win32 Error 1455 (`ERROR_COMMITMENT_LIMIT`), capping peak committed memory at **10.54 MB**.
+> 2. **Physical Working Set Eviction (`EmptyWorkingSet`)**: Calling `K32EmptyWorkingSet(hProcess)` instructs the Windows NT Memory Manager to remove resident physical pages from the target process's working set, flushing modified private pages to the pagefile and moving clean pages to standby/free lists. 
+> WinGuard measures `WorkingSetSize` via `GetProcessMemoryInfo()` immediately before and after invoking `EmptyWorkingSet()`, achieving an empirical **98.7% eviction of physical RAM** (flushing physical RAM from 3.70 MB down to 0.05 MB) without terminating the process.
 
 ---
 

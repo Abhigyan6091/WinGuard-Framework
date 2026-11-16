@@ -122,8 +122,10 @@ A process's **Working Set** is the set of physical memory pages currently reside
   ```c
   K32EmptyWorkingSet(hProcess);
   ```
-- This instructs the Windows Memory Manager (Mm) to strip all resident pages from the process's working set and write modified pages back to the paging file or standby list.
-- In WinGuard's empirical benchmarks, calling `EmptyWorkingSet` upon escalating to `LEVEL 2 (CONTAINED)` drops resident physical RAM consumption from ~50 MB down to **10.55 MB** instantly, neutralizing RAM starvation without terminating the process.
+- This instructs the Windows Memory Manager (Mm) to strip resident physical pages from the process's working set, flushing modified private pages to the pagefile and clean pages to the standby/free lists.
+- **Physical Working Set vs. Virtual Commit**: It is important to distinguish between physical working set and virtual commitment:
+  - `EmptyWorkingSet()` evicts physical RAM pages. WinGuard measures `WorkingSetSize` via `GetProcessMemoryInfo()` immediately before and after invoking `EmptyWorkingSet()`, achieving an empirical **98.7% eviction of resident physical RAM** (flushing working set from 3.70 MB down to 0.05 MB) without terminating the process.
+  - Virtual commitment is governed separately by the Job Object commit quota (`JOBOBJECT_EXTENDED_LIMIT_INFORMATION.JobMemoryLimit`), which caps committed memory at **10.54 MB** under test policies and blocks subsequent allocation chunks at the `VirtualAlloc` boundary (`ERROR_COMMITMENT_LIMIT`).
 
 ---
 
