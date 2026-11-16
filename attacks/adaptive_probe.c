@@ -44,15 +44,17 @@ int main(int argc, char* argv[]) {
 
     /* Phase 3: Secondary Pressure - Triggering Level 2 Escalation */
     printf("[Phase 3: Repeated Violation] Committing memory rapidly...\n");
+    int allocated = 0;
     void* ptrs[5];
     for (int i = 0; i < 5; ++i) {
         ptrs[i] = VirtualAlloc(NULL, 10 * 1024 * 1024, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         if (ptrs[i]) {
             memset(ptrs[i], 0xCC, 10 * 1024 * 1024);
+            allocated++;
         }
         Sleep(50);
     }
-    printf("[Phase 3 Complete] Repeated pressure applied. Escalation to LEVEL 2 triggered.\n");
+    printf("[Phase 3 Complete] Repeated pressure applied. (Allocated: %d/5 chunks)\n", allocated);
 
     /* Clean up allocated memory */
     for (int i = 0; i < 5; ++i) {
@@ -65,5 +67,6 @@ int main(int argc, char* argv[]) {
     printf("[Phase 4 Complete] Quiescent period elapsed. Checking dynamic state decay.\n");
 
     printf("[Adaptive Probe] Workload successfully completed all phases.\n\n");
-    return 0;
+    /* Return 2 if contained by quota, 1 if unconstrained */
+    return (allocated < 5) ? 2 : 1;
 }

@@ -113,6 +113,11 @@ BOOL adaptive_apply_level_limits(AdaptiveEngine* engine, SecurityLevel target_le
     SecurityLevel from_level = engine->current_level;
     char actions[256] = {0};
 
+    /* If demoting out of quarantine, thaw the frozen process so execution can continue */
+    if (from_level == LEVEL_3_QUARANTINED && target_level < LEVEL_3_QUARANTINED) {
+        pm_thaw_process(proc);
+    }
+
     switch (target_level) {
         case LEVEL_0_OBSERVE:
             if (proc->job) {
@@ -148,7 +153,19 @@ BOOL adaptive_apply_level_limits(AdaptiveEngine* engine, SecurityLevel target_le
             }
             if (proc->hProcess) {
                 SetPriorityClass(proc->hProcess, IDLE_PRIORITY_CLASS);
+                PROCESS_MEMORY_COUNTERS pmc_before, pmc_after;
+                SIZE_T ws_before = 0, ws_after = 0;
+                if (GetProcessMemoryInfo(proc->hProcess, &pmc_before, sizeof(pmc_before))) {
+                    ws_before = pmc_before.WorkingSetSize;
+                }
                 EmptyWorkingSet(proc->hProcess);
+                if (GetProcessMemoryInfo(proc->hProcess, &pmc_after, sizeof(pmc_after))) {
+                    ws_after = pmc_after.WorkingSetSize;
+                }
+                double trim_pct = (ws_before > 0 && ws_before > ws_after) ?
+                    ((double)(ws_before - ws_after) / (double)ws_before) * 100.0 : 0.0;
+                LOG_INFO("[MEMORY TRIM] EmptyWorkingSet trimmed physical Working Set from %.2f MB to %.2f MB (%.1f%% physical RAM evicted)",
+                         (double)ws_before / (1024.0 * 1024.0), (double)ws_after / (1024.0 * 1024.0), trim_pct);
             }
             snprintf(actions, sizeof(actions),
                      "CPU rate clamped to 15%% (HARD), active process limit clamped to 2, priority IDLE, EmptyWorkingSet() invoked");

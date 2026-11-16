@@ -103,5 +103,6 @@ int main(int argc, char* argv[]) {
     }
 
     printf("   [Process Stress] Completed.\n");
-    return (blocked > 0) ? 2 : 0;
+    /* Return 2 if contained by kernel quota, 1 if all processes spawned unconstrained */
+    return (blocked > 0) ? 2 : 1;
 }

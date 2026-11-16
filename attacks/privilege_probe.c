@@ -62,6 +62,9 @@ int main(void) {
     }
 
     printf("\n   [Privilege Probe: Testing Controlled Operations]\n");
+    BOOL probe_a_blocked = FALSE;
+    BOOL probe_b_blocked = FALSE;
+    BOOL probe_c_blocked = FALSE;
 
     /* Test Operation A: Attempt to acquire TOKEN_ADJUST_PRIVILEGES and enable SeShutdownPrivilege */
     printf("   Probe A: Attempting to acquire TOKEN_ADJUST_PRIVILEGES... ");
@@ -81,16 +84,20 @@ int main(void) {
                 printf("ENABLED (SeShutdownPrivilege acquired)\n");
             } else if (err == ERROR_NOT_ALL_ASSIGNED) {
                 printf("BLOCKED (Win32 1300 ERROR_NOT_ALL_ASSIGNED - Privilege stripped from token!)\n");
+                probe_a_blocked = TRUE;
             } else {
                 printf("DENIED (Win32 Error %lu)\n", err);
+                probe_a_blocked = TRUE;
             }
         } else {
             printf("FAILED lookup\n");
+            probe_a_blocked = TRUE;
         }
         CloseHandle(hAdjustToken);
     } else {
         DWORD err = GetLastError();
         printf("BLOCKED / ACCESS DENIED (Win32 Error %lu: Token rights stripped!)\n", err);
+        probe_a_blocked = TRUE;
     }
 
     /* Test Operation B: Attempt to open protected System process (PID 4) with PROCESS_ALL_ACCESS */
@@ -103,6 +110,7 @@ int main(void) {
         DWORD err = GetLastError();
         printf("BLOCKED / DENIED (Win32 Error %lu: %s)\n",
                err, (err == ERROR_ACCESS_DENIED) ? "ERROR_ACCESS_DENIED" : "FAILED");
+        probe_b_blocked = TRUE;
     }
 
     /* Test Operation C: Attempt to write to protected System32 hosts file */
@@ -124,14 +132,18 @@ int main(void) {
         DWORD err = GetLastError();
         printf("BLOCKED / DENIED (Win32 Error %lu: %s)\n",
                err, (err == ERROR_ACCESS_DENIED) ? "ERROR_ACCESS_DENIED" : "FAILED");
+        probe_c_blocked = TRUE;
     }
 
     if (hToken) {
         CloseHandle(hToken);
     }
 
+    BOOL contained = is_restricted && probe_a_blocked && probe_b_blocked && probe_c_blocked;
+
     printf("\n   [Privilege Probe Summary]\n");
     printf("   Security Posture : %s\n", is_restricted ? "STRICT RESTRICTED SANDBOX" : "PERMISSIVE STANDARD TOKEN");
+    printf("   Privilege Defense: %s\n", contained ? "CONTAINED [PASS]" : "UNCONTAINED [ESCAPED]");
     printf("   [Privilege Probe] Completed.\n");
-    return 0;
+    return contained ? 2 : 1;
 }

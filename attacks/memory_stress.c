@@ -84,5 +84,6 @@ int main(int argc, char* argv[]) {
     }
 
     printf("   [Memory Stress] Memory released. Exiting.\n");
-    return blocked ? 2 : 0;
+    /* Return 2 if memory limit enforced, 1 if allocations succeeded unconstrained */
+    return blocked ? 2 : 1;
 }

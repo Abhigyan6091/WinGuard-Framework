@@ -5,6 +5,18 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define BENCHMARK_DEFAULT_RUNS 10
+
+/**
+ * MetricStats holds statistical aggregation (mean, stddev, min, max) across multiple benchmark runs.
+ */
+typedef struct {
+    double mean;
+    double stddev;
+    double min_val;
+    double max_val;
+} MetricStats;
+
 /**
  * ExperimentResult captures empirical benchmarking metrics for a single run mode.
  */
@@ -27,29 +39,62 @@ typedef struct {
 } ExperimentResult;
 
 /**
+ * AggregatedExperimentResult captures averaged multi-run metrics with statistical variation.
+ */
+typedef struct {
+    char mode_name[32];
+    char policy_used[64];
+    uint32_t run_count;
+    MetricStats wall_time;
+    MetricStats cpu_user;
+    MetricStats cpu_kernel;
+    MetricStats peak_cpu;
+    MetricStats avg_cpu;
+    MetricStats peak_mem;
+    MetricStats active_procs;
+    MetricStats violations;
+    MetricStats escalations;
+    MetricStats demotions;
+    MetricStats adaptation_latency;
+    BOOL contained;
+    DWORD typical_exit_code;
+} AggregatedExperimentResult;
+
+/**
  * Executes a comparative 3-way experiment (Permissive vs Static Strict vs Adaptive)
- * against an identical target workload and outputs metrics to console, CSV, and Markdown.
- * 
- * @param workload_cmd Command line of the target program to evaluate.
- * @param out_csv_path Path for exported CSV comparison table (optional, defaults to results/experiment_comparison.csv).
- * @param out_md_path Path for exported Markdown report (optional, defaults to results/benchmark_report.md).
- * @return TRUE on success, FALSE otherwise.
+ * across multiple runs (default 10) to compute statistical mean and variation.
+ */
+BOOL experiment_run_comparison_runs(const WCHAR* workload_cmd, const WCHAR* out_csv_path, const WCHAR* out_md_path, uint32_t num_runs);
+
+/**
+ * Executes a comparative 3-way experiment with default 10 runs.
  */
 BOOL experiment_run_comparison(const WCHAR* workload_cmd, const WCHAR* out_csv_path, const WCHAR* out_md_path);
 
 /**
- * Pretty-prints comparative experiment metrics to stdout.
+ * Pretty-prints aggregated comparative experiment metrics with mean and stddev to stdout.
+ */
+void experiment_print_aggregated_table(const AggregatedExperimentResult* results, size_t count);
+
+/**
+ * Pretty-prints comparative experiment metrics for single runs to stdout.
  */
 void experiment_print_table(const ExperimentResult* results, size_t count);
 
 /**
- * Exports comparative metrics to structured CSV.
+ * Exports comparative metrics to structured CSV (including per-run and summary statistics).
  */
+BOOL experiment_export_csv_multi(const ExperimentResult* raw_results, size_t mode_count, size_t run_count,
+                                 const AggregatedExperimentResult* agg_results, const WCHAR* csv_path);
+
 BOOL experiment_export_csv(const ExperimentResult* results, size_t count, const WCHAR* csv_path);
 
 /**
- * Exports comparative metrics and narrative evaluation to Markdown.
+ * Exports comparative metrics and narrative evaluation to Markdown with mean and standard deviation.
  */
+BOOL experiment_export_markdown_aggregated(const AggregatedExperimentResult* agg_results, size_t count,
+                                           const WCHAR* md_path, const WCHAR* workload_cmd);
+
 BOOL experiment_export_markdown(const ExperimentResult* results, size_t count, const WCHAR* md_path, const WCHAR* workload_cmd);
 
 #endif /* WINGUARD_EXPERIMENT_H */

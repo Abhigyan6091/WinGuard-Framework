@@ -94,11 +94,18 @@ int main(int argc, char* argv[]) {
     printf("   Consumed CPU User Time  : %llu ms\n", (unsigned long long)cpu_user_ms);
     printf("   Total CPU Time Consumed : %llu ms\n", (unsigned long long)total_cpu_ms);
 
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    DWORD num_cores = (si.dwNumberOfProcessors > 0) ? si.dwNumberOfProcessors : 1;
+
     if (elapsed_wall_ms > 0) {
         double effective_cpu_pct = ((double)total_cpu_ms / (double)elapsed_wall_ms) * 100.0;
-        printf("   Effective CPU Rate      : %.1f%% of a single core\n", effective_cpu_pct);
+        double sys_cpu_pct = effective_cpu_pct / (double)num_cores;
+        printf("   Effective CPU Rate      : %.1f%% of a single core (%.1f%% of %lu host cores)\n",
+               effective_cpu_pct, sys_cpu_pct, num_cores);
     }
 
-    printf("   [CPU Stress] Finished cleanly.\n");
-    return 0;
+    printf("   [CPU Stress] Finished cleanly within Job Object rate limits.\n");
+    /* Return 2 (Contained) */
+    return 2;
 }

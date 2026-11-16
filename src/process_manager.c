@@ -90,34 +90,43 @@ BOOL pm_launch_process(
 
     if (use_restricted_token) {
         /*
-         * Milestone 4: Create a restricted primary token with stripped privileges
+         * Create a restricted primary token with stripped privileges
          * and Low Integrity, then launch via CreateProcessAsUserW.
+         * Security Fix (Point 3): Fail-closed. If restricted token creation
+         * or CreateProcessAsUserW fails, abort execution immediately.
+         * Never fall back to unprivileged/standard CreateProcessW.
          */
-        if (tm_create_restricted_token(NULL, TRUE, low_integrity, &hRestrictedPrimary)) {
-            success = CreateProcessAsUserW(
-                hRestrictedPrimary,
-                NULL,
-                cmd_buffer,
-                NULL,
-                NULL,
-                FALSE,
-                CREATE_SUSPENDED,
-                NULL,
-                NULL,
-                &si,
-                &pi
-            );
-            CloseHandle(hRestrictedPrimary);
-
-            if (!success) {
-                DWORD err = GetLastError();
-                LOG_WARN("CreateProcessAsUserW failed with error %lu. Falling back to CreateProcessW.", err);
-            }
+        if (!tm_create_restricted_token(NULL, TRUE, low_integrity, &hRestrictedPrimary)) {
+            LOG_ERROR("Failed to generate restricted token for sandboxed execution. Aborting launch (Fail-Closed).");
+            jm_close_job(ctx->job);
+            free(ctx);
+            return FALSE;
         }
-    }
 
-    if (!success) {
-        /* Standard creation path suspended */
+        success = CreateProcessAsUserW(
+            hRestrictedPrimary,
+            NULL,
+            cmd_buffer,
+            NULL,
+            NULL,
+            FALSE,
+            CREATE_SUSPENDED,
+            NULL,
+            NULL,
+            &si,
+            &pi
+        );
+        DWORD err = GetLastError();
+        CloseHandle(hRestrictedPrimary);
+
+        if (!success) {
+            LOG_ERROR("CreateProcessAsUserW failed with Win32 Error %lu. Aborting launch (Fail-Closed: Will not fallback to unrestricted token).", err);
+            jm_close_job(ctx->job);
+            free(ctx);
+            return FALSE;
+        }
+    } else {
+        /* Standard creation path suspended (only when restricted token is explicitly not requested) */
         success = CreateProcessW(
             NULL,
             cmd_buffer,
@@ -130,14 +139,13 @@ BOOL pm_launch_process(
             &si,
             &pi
         );
-    }
-
-    if (!success) {
-        DWORD err = GetLastError();
-        LOG_ERROR("Process creation failed with Win32 Error %lu.", err);
-        jm_close_job(ctx->job);
-        free(ctx);
-        return FALSE;
+        if (!success) {
+            DWORD err = GetLastError();
+            LOG_ERROR("CreateProcessW failed with Win32 Error %lu.", err);
+            jm_close_job(ctx->job);
+            free(ctx);
+            return FALSE;
+        }
     }
 
     ctx->pid = pi.dwProcessId;

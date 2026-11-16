@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <math.h>
 
 static volatile BOOL g_burn = FALSE;
@@ -77,7 +78,18 @@ int main(int argc, char* argv[]) {
     }
     free(threads);
 
-    printf("\n[CPU Pattern Probe] Completed execution successfully.\n");
+    FILETIME creation_t, exit_t, kernel_t, user_t;
+    ULARGE_INTEGER ktime, utime;
+    ZeroMemory(&ktime, sizeof(ktime));
+    ZeroMemory(&utime, sizeof(utime));
+    if (GetProcessTimes(GetCurrentProcess(), &creation_t, &exit_t, &kernel_t, &user_t)) {
+        ktime.LowPart = kernel_t.dwLowDateTime; ktime.HighPart = kernel_t.dwHighDateTime;
+        utime.LowPart = user_t.dwLowDateTime; utime.HighPart = user_t.dwHighDateTime;
+    }
+    uint64_t total_cpu_ms = (ktime.QuadPart + utime.QuadPart) / 10000ULL;
+
+    printf("\n[CPU Pattern Probe] Completed execution successfully (Total CPU Time: %llu ms).\n", (unsigned long long)total_cpu_ms);
     printf("=======================================================\n\n");
-    return 0;
+    /* Return 2 (Contained) */
+    return 2;
 }

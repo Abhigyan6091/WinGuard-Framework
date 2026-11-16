@@ -47,6 +47,7 @@ static DWORD WINAPI monitor_worker_thread(LPVOID param) {
         uint64_t kernel_time_100ns = 0;
         uint64_t user_time_100ns = 0;
         uint64_t peak_memory_bytes = 0;
+        uint64_t current_memory_bytes = 0;
         double cpu_pct = 0.0;
         const char* status = "OK";
 
@@ -105,6 +106,31 @@ static DWORD WINAPI monitor_worker_thread(LPVOID param) {
                 user_time_100ns = stats.total_user_time_100ns;
                 peak_memory_bytes = stats.peak_job_memory_bytes;
 
+                /* Point 5: Calculate current memory usage across active job processes (not just historical peak) */
+                DWORD job_pids[64] = {0};
+                DWORD job_pid_count = 0;
+                if (jm_get_job_pids(mon->target_proc->job, job_pids, 64, &job_pid_count) && job_pid_count > 0) {
+                    for (DWORD pi = 0; pi < job_pid_count; ++pi) {
+                        HANDLE hP = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, FALSE, job_pids[pi]);
+                        if (hP) {
+                            PROCESS_MEMORY_COUNTERS pmc;
+                            if (GetProcessMemoryInfo(hP, &pmc, sizeof(pmc))) {
+                                current_memory_bytes += (uint64_t)pmc.PagefileUsage;
+                            }
+                            CloseHandle(hP);
+                        }
+                    }
+                }
+                if (current_memory_bytes == 0 && mon->target_proc->hProcess) {
+                    PROCESS_MEMORY_COUNTERS pmc;
+                    if (GetProcessMemoryInfo(mon->target_proc->hProcess, &pmc, sizeof(pmc))) {
+                        current_memory_bytes = (uint64_t)pmc.PagefileUsage;
+                    }
+                }
+                if (current_memory_bytes > peak_memory_bytes) {
+                    peak_memory_bytes = current_memory_bytes;
+                }
+
                 uint64_t current_cpu_100ns = kernel_time_100ns + user_time_100ns;
                 uint64_t delta_cpu_100ns = (current_cpu_100ns >= mon->prev_job_cpu_100ns) ?
                                            (current_cpu_100ns - mon->prev_job_cpu_100ns) : 0;
@@ -117,15 +143,15 @@ static DWORD WINAPI monitor_worker_thread(LPVOID param) {
 
                 mon->prev_job_cpu_100ns = current_cpu_100ns;
 
-                /* Track memory allocation velocity (dM/dt) */
+                /* Track memory allocation velocity (dM/dt) based on current memory */
                 double delta_sec_mem = (double)delta_wall_100ns / 10000000.0;
-                if (mon->prev_memory_commit_bytes > 0 && peak_memory_bytes > mon->prev_memory_commit_bytes && delta_sec_mem > 0.001) {
-                    uint64_t delta_mem = peak_memory_bytes - mon->prev_memory_commit_bytes;
+                if (mon->prev_memory_commit_bytes > 0 && current_memory_bytes > mon->prev_memory_commit_bytes && delta_sec_mem > 0.001) {
+                    uint64_t delta_mem = current_memory_bytes - mon->prev_memory_commit_bytes;
                     mon->current_alloc_velocity_mb_s = ((double)delta_mem / (1024.0 * 1024.0)) / delta_sec_mem;
                 } else {
                     mon->current_alloc_velocity_mb_s = 0.0;
                 }
-                mon->prev_memory_commit_bytes = peak_memory_bytes;
+                mon->prev_memory_commit_bytes = current_memory_bytes;
 
                 /* Threshold & Policy Violation Check */
                 JobLimits* lim = &mon->target_proc->job->current_limits;
@@ -142,11 +168,11 @@ static DWORD WINAPI monitor_worker_thread(LPVOID param) {
                     if (mon->engine) {
                         adaptive_record_violation(mon->engine, "ALLOCATION_ACCELERATION_BOMB", "Memory allocation rate exceeded safe threshold (>150 MB/s)");
                     }
-                } else if (lim->job_memory_bytes > 0 && peak_memory_bytes >= (uint64_t)((double)lim->job_memory_bytes * 0.90)) {
+                } else if (lim->job_memory_bytes > 0 && current_memory_bytes >= (uint64_t)((double)lim->job_memory_bytes * 0.90)) {
                     status = "VIOLATION_MEMORY_LIMIT";
                     mon->summary.total_violations++;
                     if (mon->engine) {
-                        adaptive_record_violation(mon->engine, "MEMORY_QUOTA_PRESSURE", "Committed memory reached 90% quota threshold");
+                        adaptive_record_violation(mon->engine, "MEMORY_QUOTA_PRESSURE", "Current committed memory reached 90% quota threshold");
                     }
                 } else if (lim->cpu_rate_limit_percent > 0 && cpu_pct > 8.0 && cpu_pct > (double)lim->cpu_rate_limit_percent) {
                     /* Advanced Multi-Signal & Elastic Check (v2.0) */
@@ -214,7 +240,8 @@ static DWORD WINAPI monitor_worker_thread(LPVOID param) {
 
             PROCESS_MEMORY_COUNTERS pmc;
             if (GetProcessMemoryInfo(mon->target_proc->hProcess, &pmc, sizeof(pmc))) {
-                peak_memory_bytes = (uint64_t)pmc.PeakWorkingSetSize;
+                current_memory_bytes = (uint64_t)pmc.PagefileUsage;
+                peak_memory_bytes = (uint64_t)pmc.PeakPagefileUsage;
             }
         }
 
@@ -228,6 +255,9 @@ static DWORD WINAPI monitor_worker_thread(LPVOID param) {
             mon->summary.peak_cpu_percent = cpu_pct;
         }
         mon->sum_cpu_samples += cpu_pct;
+        if (current_memory_bytes > mon->summary.peak_memory_bytes) {
+            mon->summary.peak_memory_bytes = current_memory_bytes;
+        }
         if (peak_memory_bytes > mon->summary.peak_memory_bytes) {
             mon->summary.peak_memory_bytes = peak_memory_bytes;
         }

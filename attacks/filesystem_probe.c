@@ -69,24 +69,46 @@ int main(void) {
     DWORD pid = GetCurrentProcessId();
     printf("   [Filesystem Probe] Initiating filesystem boundary access audit for PID %lu...\n\n", pid);
 
+    BOOL all_blocked = TRUE;
+
     /* Probe 1: Read authorized input data */
     test_read(L"sandbox\\input\\sample_input.txt", "1. Authorized Read");
 
-    /* Probe 2: Attempt unauthorized write into input/ */
-    test_write(L"sandbox\\input\\unauthorized_write.txt", "2. Input Dir Write (Tampering)", TRUE);
+    /* Probe 2: Attempt unauthorized write into input/ (Expect Blocked) */
+    if (!test_write(L"sandbox\\input\\unauthorized_write.txt", "2. Input Dir Write (Tampering)", TRUE)) {
+        all_blocked = FALSE;
+    }
 
-    /* Probe 3: Attempt authorized write into output/ */
+    /* Probe 3: Attempt authorized write into output/ (Expect Allowed) */
     test_write(L"sandbox\\output\\test_output.txt", "3. Output Dir Write", FALSE);
 
-    /* Probe 4: Attempt authorized write into temp/ */
+    /* Probe 4: Attempt authorized write into temp/ (Expect Allowed) */
     test_write(L"sandbox\\temp\\test_temp.tmp", "4. Temp Dir Write", FALSE);
 
-    /* Probe 5: Attempt unauthorized escape write outside sandbox (parent directory) */
-    test_write(L"escape_attempt.txt", "5. Outside Sandbox Write (Escape)", TRUE);
+    /* Probe 5: Attempt unauthorized escape write outside sandbox (Expect Blocked) */
+    if (!test_write(L"escape_attempt.txt", "5. Outside Sandbox Write (Escape)", TRUE)) {
+        all_blocked = FALSE;
+    }
+
+    /* Verify physical side effects on disk */
+    BOOL escape_file_written = (GetFileAttributesW(L"escape_attempt.txt") != INVALID_FILE_ATTRIBUTES);
+    BOOL input_tamper_written = (GetFileAttributesW(L"sandbox\\input\\unauthorized_write.txt") != INVALID_FILE_ATTRIBUTES);
+
+    if (escape_file_written) {
+        DeleteFileW(L"escape_attempt.txt");
+        all_blocked = FALSE;
+    }
+    if (input_tamper_written) {
+        DeleteFileW(L"sandbox\\input\\unauthorized_write.txt");
+        all_blocked = FALSE;
+    }
 
     printf("\n   [Filesystem Probe Summary]\n");
-    printf("   Input Integrity Protection  : VERIFIED\n");
-    printf("   Workspace Isolation (MIC)   : VERIFIED\n");
+    printf("   Input Integrity Protection  : %s\n", !input_tamper_written ? "VERIFIED (Tampering Blocked)" : "FAILED (Tampered)");
+    printf("   Workspace Isolation (MIC)   : %s\n", !escape_file_written ? "VERIFIED (Escape Blocked)" : "FAILED (Escape Succeeded)");
+    printf("   Containment Assessment      : %s\n", all_blocked ? "CONTAINED [PASS]" : "UNCONTAINED [ESCAPE]");
     printf("   [Filesystem Probe] Completed.\n");
-    return 0;
+
+    /* Return 2 if contained, 1 if boundary escaped */
+    return all_blocked ? 2 : 1;
 }

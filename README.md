@@ -69,7 +69,7 @@ Processes begin in **LEVEL 0 (Observe)** with proportional quotas so benign init
 Unlike static sandboxes that permanently lock down or abort, WinGuard can recover. If a process that was escalated to LEVEL 1 or 2 settles down and runs cleanly for a configured cooldown period (e.g., 1–5 seconds without violations), the engine demotes the isolation level (`LEVEL 2 -> LEVEL 1 -> LEVEL 0`) and expands its resource allocation again.
 
 **Memory Eviction via `EmptyWorkingSet`**:  
-When entering LEVEL 2, WinGuard invokes `K32EmptyWorkingSet()`. The Windows NT Memory Manager immediately flushes the process's resident physical pages back to pagefiles and standby lists. In our benchmarks, this instantly shrank physical RAM usage by **79.2%** (from ~50 MB to 10.5 MB) without terminating the process.
+When entering LEVEL 2, WinGuard invokes `K32EmptyWorkingSet()`. The Windows NT Memory Manager immediately flushes the process's resident physical pages back to pagefiles and standby lists. WinGuard measures the physical working set before and after the trim via `GetProcessMemoryInfo()`, evicting up to **98.7% of physical resident RAM** (e.g., dropping working set from 3.70 MB to 0.05 MB) without terminating the process. Note that virtual memory commit charge is governed separately by the Job Object commit quota (capped at 20 MB in test policies, blocking unconstrained 50 MB allocations).
 
 ### 5. Advanced Engine Enhancements
 To eliminate common containment drawbacks (such as false-positive clamping of heavy compilers or ungraceful whole-job killing), WinGuard includes four advanced subsystems:
@@ -107,27 +107,31 @@ Running `WinGuard.exe attack all` runs the core test matrix, and `tests/test_v2_
 
 ## Empirical Benchmark Results
 
-We evaluated identical dynamic workloads across three different security paradigms on native Windows 11 (x86_64, multi-core):
+We evaluated identical dynamic workloads across three different security paradigms on native Windows 11 (x86_64, multi-core) across **N = 10 repeated trials** per configuration (reporting mean $\pm$ standard deviation):
 
-| Evaluation Metric | Permissive Baseline | Static Strict Sandbox | Adaptive WinGuard Sandbox |
+| Evaluation Metric | Permissive Baseline (N=10) | Static Strict Sandbox (N=10) | Adaptive WinGuard Sandbox (N=10) |
 |:---|:---:|:---:|:---:|
 | **Applied Security Policy** | `policies\permissive.policy` | `policies\strict.policy` | `policies\adaptive_test.policy` |
-| **Wall Clock Duration** | `2.11 s` | `2.11 s` | `2.09 s` |
-| **Total User CPU Time** | `750 ms` | `765 ms` | `781 ms` |
-| **Total Kernel CPU Time** | `78 ms` | `62 ms` | `31 ms` |
-| **Peak CPU Utilization** | `14.44%` | `14.10%` | `15.31%` |
-| **Average CPU Utilization** | `2.59%` | `2.48%` | `2.45%` |
-| **Peak Committed Memory** | `50.63 MB` | `50.62 MB` | **`10.55 MB` (79.2% reduction)** |
-| **Policy Violations Logged** | `0` | `0` | `5` |
-| **Dynamic Escalations** | N/A (Static) | N/A (Static) | **`2`** |
-| **Dynamic Decay Demotions** | N/A (Static) | N/A (Static) | **`1`** |
-| **Mean Adaptation Latency** | N/A | N/A | **`281.0 ms`** |
-| **Containment Enforcement** | `PERMITTED` | `CONTAINED [PASS]` | `ADAPTED [PASS]` |
+| **Wall Clock Duration** | `2.16 +/- 0.01 s` | `0.90 +/- 0.05 s` *(Terminated)* | `2.14 +/- 0.02 s` *(Clean Exit)* |
+| **Total User CPU Time** | `771 +/- 23.5 ms` | `734 +/- 40.2 ms` | `762 +/- 40.8 ms` |
+| **Total Kernel CPU Time** | `65 +/- 23.1 ms` | `53 +/- 22.5 ms` | `46 +/- 26.5 ms` |
+| **Peak CPU Utilization** | `15.54 +/- 1.55%` | `15.42 +/- 1.27%` | `14.77 +/- 1.00%` |
+| **Average CPU Utilization** | `2.34 +/- 0.13%` | `7.87 +/- 0.45%` | `2.36 +/- 0.18%` |
+| **Peak Committed Memory** | `50.62 +/- 0.00 MB` | `10.54 +/- 0.01 MB` | `10.54 +/- 0.00 MB` |
+| **Policy Violations Logged** | `5.0 +/- 0.0` | `1.0 +/- 0.0` | `5.0 +/- 0.0` |
+| **Dynamic Escalations** | N/A (Static) | N/A (Static) | **`2.0 +/- 0.0`** |
+| **Dynamic Decay Demotions** | N/A (Static) | N/A (Static) | **`1.0 +/- 0.0`** |
+| **Mean Adaptation Latency** | N/A | N/A | **`309.4 +/- 23.2 ms`** |
+| **Containment Enforcement** | `PERMITTED (Contained: NO)` | `CONTAINED (QUARANTINED)` | `ADAPTED [PASS] (Contained: YES)` |
 
-**Key Takeaways:**
-1. **Low Adaptation Latency**: From the onset of an unconstrained compute burst, the engine detected the anomaly and clamped the kernel scheduler rate within **281 ms**.
-2. **Effective Memory Reclamation**: While static sandboxes allowed the process to keep 50 MB resident in RAM, WinGuard's working set trim stripped physical resident memory down to **10.55 MB** during containment.
-3. **Graceful Decay**: After the attack phase subsided, the engine successfully demoted from LEVEL 2 to LEVEL 1, proving the state machine can recover rather than permanently hamstringing benign workloads.
+**Key Takeaways & Empirical Analysis:**
+1. **Accurate Static vs. Adaptive Behavior**:
+   - In **Static Strict**, the process starts at LEVEL 2 (Contained) with rigid limits. When the workload executes a CPU spike, the strict policy threshold (`escalation_threshold = 1`) immediately triggers LEVEL 3 quarantine termination at **0.90 s** (`0xC0000420`), recording **1 violation** and terminating at **10.54 MB** committed memory.
+   - In **Adaptive WinGuard**, the process starts at LEVEL 0 (Observe), accommodates startup bursts, and dynamically clamps CPU and evicts working set memory within **309.4 ms** without terminating the process, allowing legitimate workload completion.
+2. **Commit Quota vs. Physical Working Set**:
+   - The virtual memory commitment ceiling of **10.54 MB** is enforced by the Job Object memory commit quota (`max_memory_mb = 20` in `adaptive_test.policy`), which prevents subsequent allocation chunks from exceeding the boundary.
+   - Concurrently, WinGuard's LEVEL 2 dynamic working set eviction (`EmptyWorkingSet`) actively trims resident physical memory, achieving an empirical **98.7% eviction of physical RAM** (from 3.70 MB down to 0.05 MB) measured via `GetProcessMemoryInfo()`.
+3. **Graceful Decay**: After the attack phase subsided, the engine successfully demoted from LEVEL 2 to LEVEL 1, proving the state machine recovers capacity rather than permanently hamstringing bursty workloads.
 
 ---
 
