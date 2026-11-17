@@ -31,3 +31,7 @@ docs/*deep_dive*.md
 docs/viva.md
 docs/limitations.md
 
+# Generated reports & presentation documents
+*.pdf
+
+
